@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ArrowUpRight, BellRing, CalendarDays, Check, CheckCircle2, ChevronRight, CircleAlert, Clock3, Filter, Gauge, Menu, Plus, Repeat2, Save, Settings2, ShieldCheck, Sparkles, Trash2, UsersRound, Video, X, XCircle } from 'lucide-react';
 
 type Tab = 'Resumen' | 'Calendario' | 'Equipos';
@@ -12,11 +12,11 @@ const people = (names: Array<[string, string]>, colors: string[]): Person[] => n
 const teamColors = ['#11a29a', '#e6a542', '#6c75e8', '#e56f61', '#4e9ed3'];
 
 const initialTeams: Team[] = [
-  { name: 'Equipo A', label: 'DOMINGO · 12:15 PM', service: 'Domingo 12:15', people: people([['Josue', 'CAM1'], ['Martha', 'CAM2'], ['Magaly', 'CAM3'], ['Slider libre', 'SLIDER'], ['Alberto', 'GRUA']], teamColors) },
+  { name: 'Equipo A', label: 'DOMINGO · 10:00 AM', service: 'Domingo 10:00', people: people([['Josue', 'CAM1'], ['Martha', 'CAM2'], ['Magaly', 'CAM3'], ['Slider libre', 'SLIDER'], ['Alberto', 'GRUA']], teamColors) },
   { name: 'Equipo B', label: 'DOMINGO · 10:00 AM', service: 'Domingo 10:00', people: people([['Wilson', 'CAM1'], ['Sara', 'CAM2'], ['Gregory', 'CAM3'], ['Slider libre', 'SLIDER'], ['Grua libre', 'GRUA']], teamColors) },
   { name: 'Equipo Viernes', label: 'VIERNES · 8:00 PM', service: 'Viernes 8:00', people: people([['Mirtha', 'CAM1'], ['Vladimir', 'CAM2'], ['Daniel', 'CAM3'], ['Pastora', 'SLIDER'], ['Allan', 'GRUA']], teamColors) },
-  { name: 'Equipo 1', label: 'ROTACIÓN · BASE', service: 'Rotación', people: people([['Jhon', 'CAM1'], ['Vivi', 'CAM2'], ['Alany', 'CAM3'], ['Joel', 'SLIDER'], ['Leo', 'GRUA']], teamColors) },
-  { name: 'Equipo 2', label: 'ROTACIÓN · BASE', service: 'Rotación', people: people([['Rebeca', 'CAM1'], ['Cristina', 'CAM2'], ['Cristian', 'CAM3'], ['Niko', 'SLIDER'], ['Alejandro', 'GRUA']], teamColors) },
+  { name: 'Equipo 1', label: 'DOMINGO · 12:15 PM', service: 'Domingo 12:15', people: people([['Jhon', 'CAM1'], ['Vivi', 'CAM2'], ['Alany', 'CAM3'], ['Joel', 'SLIDER'], ['Leo', 'GRUA']], teamColors) },
+  { name: 'Equipo 2', label: 'DOMINGO · 12:15 PM', service: 'Domingo 12:15', people: people([['Rebeca', 'CAM1'], ['Cristina', 'CAM2'], ['Cristian', 'CAM3'], ['Niko', 'SLIDER'], ['Alejandro', 'GRUA']], teamColors) },
   { name: 'Equipo J1', label: 'YOUNGS · ROTACIÓN', service: 'Youngs', people: people([['Antony', 'CAM1'], ['Cristina', 'CAM2'], ['Josue', 'CAM3'], ['Joel', 'SLIDER'], ['Leo', 'GRUA']], teamColors) },
   { name: 'Equipo J2', label: 'YOUNGS · ROTACIÓN', service: 'Youngs', people: people([['Daniel', 'CAM1'], ['Sara', 'CAM2'], ['Cristian', 'CAM3'], ['Niko', 'SLIDER'], ['Alberto', 'GRUA']], teamColors) },
   { name: 'Equipo J3', label: 'YOUNGS · ROTACIÓN', service: 'Youngs', people: people([['Jhon', 'CAM1'], ['Vivi', 'CAM2'], ['Alany', 'CAM3'], ['Niko', 'SLIDER'], ['Alejandro', 'GRUA']], teamColors) },
@@ -24,8 +24,10 @@ const initialTeams: Team[] = [
 
 const services = [
   { id: 'fri', day: 'VIERNES 11', date: '11 SEP', time: '8:00 PM', type: 'Servicio de viernes', tag: 'Esta semana', tagTone: 'teal', team: 'Equipo Viernes', coverage: '5 / 8', status: '3 móviles por asignar', color: 'teal' },
-  { id: 'sun10', day: 'DOMINGO 13', date: '13 SEP', time: '10:00 AM', type: 'Primer servicio', tag: 'En 8 días', tagTone: 'amber', team: 'Equipo B', coverage: '3 / 8', status: 'Slider y grúa por asignar', color: 'orange' },
-  { id: 'sun12', day: 'DOMINGO 13', date: '13 SEP', time: '12:15 PM', type: 'Segundo servicio', tag: 'En 8 días', tagTone: 'amber', team: 'Equipo A', coverage: '4 / 8', status: 'Slider y 3 móviles por asignar', color: 'violet' },
+  { id: 'sun10', day: 'DOMINGO 13', date: '13 SEP', time: '10:00 AM', type: 'Primer servicio', tag: 'Equipo B esta semana', tagTone: 'amber', team: 'Equipo B', coverage: '5 / 8', status: '3 móviles por asignar', color: 'orange' },
+  { id: 'sun12', day: 'DOMINGO 13', date: '13 SEP', time: '12:15 PM', type: 'Segundo servicio', tag: 'Equipo 2 esta semana', tagTone: 'amber', team: 'Equipo 2', coverage: '5 / 8', status: '3 móviles por asignar', color: 'violet' },
+  { id: 'sun10next', day: 'DOMINGO 20', date: '20 SEP', time: '10:00 AM', type: 'Primer servicio', tag: 'Siguiente · Equipo A', tagTone: 'amber', team: 'Equipo A', coverage: '5 / 8', status: '3 móviles por asignar', color: 'orange' },
+  { id: 'sun12next', day: 'DOMINGO 20', date: '20 SEP', time: '12:15 PM', type: 'Segundo servicio', tag: 'Siguiente · Equipo 1', tagTone: 'amber', team: 'Equipo 1', coverage: '5 / 8', status: '3 móviles por asignar', color: 'violet' },
   { id: 'youngs', day: 'MIÉRCOLES 16', date: '16 SEP', time: '7:30 PM', type: 'Servicio Youngs', tag: 'Rotación J1', tagTone: 'blue', team: 'Equipo J1', coverage: '5 / 8', status: '3 móviles por asignar', color: 'blue' },
 ];
 
@@ -42,9 +44,24 @@ function App() {
   const [availability, setAvailability] = useState<Record<string, 'accepted' | 'declined'>>({});
   const [showPeople, setShowPeople] = useState(false);
   const [teamList, setTeamList] = useState<Team[]>(initialTeams);
+  const [storageReady, setStorageReady] = useState(false);
   const [editingTeam, setEditingTeam] = useState<Team | null>(null);
   const [creatingTeam, setCreatingTeam] = useState(false);
   const selectedTeam = useMemo(() => teamList.find((team) => team.name === selectedService.team) ?? teamList[0] ?? initialTeams[0], [selectedService, teamList]);
+
+  useEffect(() => {
+    try {
+      const savedTeams = window.localStorage.getItem('jwc-doral-team-roster');
+      if (savedTeams) {
+        const parsed = JSON.parse(savedTeams) as Team[];
+        if (Array.isArray(parsed)) setTeamList(parsed);
+      }
+    } catch { /* If a draft is invalid, keep the starter roster. */ }
+    setStorageReady(true);
+  }, []);
+  useEffect(() => {
+    if (storageReady) window.localStorage.setItem('jwc-doral-team-roster', JSON.stringify(teamList));
+  }, [storageReady, teamList]);
 
   const notify = (message: string) => { setNotice(message); window.setTimeout(() => setNotice(''), 4200); };
   const handleGenerate = () => notify(`Turnos sugeridos para ${selectedService.type.toLowerCase()} listos. Se notificará a ${selectedTeam.people.filter((person) => !person.name.includes('libre')).length} personas.`);
@@ -85,7 +102,7 @@ function App() {
 }
 
 function CalendarView({ selectedService, onSelect }: { selectedService: typeof services[number]; onSelect: (service: typeof services[number]) => void }) {
-  return <div className="view-stack"><div className="view-header"><div><p className="section-kicker">PLANIFICACIÓN MENSUAL</p><h2>Septiembre 2026</h2><p>Los servicios recurrentes se generan automáticamente según las reglas de JWC Doral.</p></div><div className="calendar-actions"><button className="outline-button"><Filter size={16} /> Filtrar</button><button className="primary-button"><Plus size={17} /> Evento especial</button></div></div><div className="calendar-layout"><section className="panel month-panel"><div className="month-toolbar"><button className="icon-button"><ChevronRight size={17} className="rotate-180" /></button><strong>Septiembre 2026</strong><button className="icon-button"><ChevronRight size={17} /></button></div><div className="weekdays">{['DOM', 'LUN', 'MAR', 'MIÉ', 'JUE', 'VIE', 'SÁB'].map((day) => <span key={day}>{day}</span>)}</div><div className="month-grid">{monthDays.flatMap((week, weekIndex) => week.map((day, dayIndex) => <div className={`calendar-cell ${day === '5' ? 'today' : ''}`} key={`${weekIndex}-${dayIndex}`}>{day && <><span className="calendar-number">{day}</span>{eventByDay[day] && <div className={`calendar-event event-${eventByDay[day]}`}>{eventByDay[day] === 'viernes' ? 'Viernes · 8 PM' : eventByDay[day] === 'youngs' ? 'Youngs · 7:30 PM' : 'Domingos · 2 servicios'}</div>}</>}</div>))}</div></section><aside className="panel rules-panel"><p className="section-kicker">REGLAS ACTIVAS</p><h3>La agenda se cuida sola</h3><div className="rule-item"><span className="rule-icon teal-bg"><Repeat2 size={17} /></span><div><strong>Viernes</strong><span>Todos los viernes · 8:00 PM</span></div><CheckCircle2 size={16} className="rule-check" /></div><div className="rule-item"><span className="rule-icon violet-bg"><CalendarDays size={17} /></span><div><strong>Domingos</strong><span>10:00 AM y 12:15 PM</span></div><CheckCircle2 size={16} className="rule-check" /></div><div className="rule-item"><span className="rule-icon amber-bg"><Sparkles size={17} /></span><div><strong>Youngs</strong><span>1er y 3er miércoles · rotación J1/J2/J3</span></div><CheckCircle2 size={16} className="rule-check" /></div><div className="rule-item"><span className="rule-icon blue-bg"><Plus size={17} /></span><div><strong>Eventos especiales</strong><span>Se agregan manualmente</span></div><CheckCircle2 size={16} className="rule-check" /></div><div className="rule-note"><CircleAlert size={16} /><span>El sistema avisa 7 días y 24 horas antes. Si alguien rechaza, propone reemplazos por disponibilidad y carga.</span></div></aside></div><div className="panel upcoming-panel"><div className="panel-heading"><div><p className="section-kicker">SELECCIONA UN TURNO</p><h3>Servicios generados</h3></div><span className="ghost-count">14 servicios este mes</span></div><div className="upcoming-grid">{services.map((service) => <button key={service.id} className={`upcoming-card ${selectedService.id === service.id ? 'selected' : ''}`} onClick={() => onSelect(service)}><span className={`service-dot dot-${service.color}`} /><strong>{service.type}</strong><span>{service.day} · {service.time}</span><small>{service.team} · {service.coverage}</small></button>)}</div></div></div>;
+  return <div className="view-stack"><div className="view-header"><div><p className="section-kicker">PLANIFICACIÓN MENSUAL</p><h2>Septiembre 2026</h2><p>Los servicios recurrentes se generan automáticamente según las reglas de JWC Doral.</p></div><div className="calendar-actions"><button className="outline-button"><Filter size={16} /> Filtrar</button><button className="primary-button"><Plus size={17} /> Evento especial</button></div></div><div className="calendar-layout"><section className="panel month-panel"><div className="month-toolbar"><button className="icon-button"><ChevronRight size={17} className="rotate-180" /></button><strong>Septiembre 2026</strong><button className="icon-button"><ChevronRight size={17} /></button></div><div className="weekdays">{['DOM', 'LUN', 'MAR', 'MIÉ', 'JUE', 'VIE', 'SÁB'].map((day) => <span key={day}>{day}</span>)}</div><div className="month-grid">{monthDays.flatMap((week, weekIndex) => week.map((day, dayIndex) => <div className={`calendar-cell ${day === '5' ? 'today' : ''}`} key={`${weekIndex}-${dayIndex}`}>{day && <><span className="calendar-number">{day}</span>{eventByDay[day] && <div className={`calendar-event event-${eventByDay[day]}`}>{eventByDay[day] === 'viernes' ? 'Viernes · 8 PM' : eventByDay[day] === 'youngs' ? 'Youngs · 7:30 PM' : 'Domingos · 2 servicios'}</div>}</>}</div>))}</div></section><aside className="panel rules-panel"><p className="section-kicker">REGLAS ACTIVAS</p><h3>La agenda se cuida sola</h3><div className="rule-item"><span className="rule-icon teal-bg"><Repeat2 size={17} /></span><div><strong>Viernes</strong><span>Todos los viernes · 8:00 PM</span></div><CheckCircle2 size={16} className="rule-check" /></div><div className="rule-item"><span className="rule-icon violet-bg"><CalendarDays size={17} /></span><div><strong>Domingos · 10:00 AM</strong><span>B este domingo → A el siguiente → repetir</span><div className="rule-secondary">Los Teams A y B alternan en el primer servicio.</div></div><CheckCircle2 size={16} className="rule-check" /></div><div className="rule-item"><span className="rule-icon amber-bg"><CalendarDays size={17} /></span><div><strong>Domingos · 12:15 PM</strong><span>2 este domingo → 1 el siguiente → repetir</span><div className="rule-secondary">Los Teams 1 y 2 alternan en el segundo servicio.</div></div><CheckCircle2 size={16} className="rule-check" /></div><div className="rule-item"><span className="rule-icon blue-bg"><Sparkles size={17} /></span><div><strong>Youngs</strong><span>1er y 3er miércoles · rotación J1/J2/J3</span></div><CheckCircle2 size={16} className="rule-check" /></div><div className="rule-item"><span className="rule-icon blue-bg"><Plus size={17} /></span><div><strong>Eventos especiales</strong><span>Se agregan manualmente</span></div><CheckCircle2 size={16} className="rule-check" /></div><div className="rule-note"><CircleAlert size={16} /><span>El sistema avisa 7 días y 24 horas antes. Si alguien rechaza, propone reemplazos por disponibilidad y carga.</span></div></aside></div><div className="panel upcoming-panel"><div className="panel-heading"><div><p className="section-kicker">SELECCIONA UN TURNO</p><h3>Servicios generados</h3></div><span className="ghost-count">6 servicios próximos</span></div><div className="upcoming-grid">{services.map((service) => <button key={service.id} className={`upcoming-card ${selectedService.id === service.id ? 'selected' : ''}`} onClick={() => onSelect(service)}><span className={`service-dot dot-${service.color}`} /><strong>{service.type}</strong><span>{service.day} · {service.time}</span><small>{service.team} · {service.coverage}</small></button>)}</div></div></div>;
 }
 
 function TeamsView({ teams, onEdit, onNew }: { teams: Team[]; onEdit: (team: Team) => void; onNew: () => void }) {
