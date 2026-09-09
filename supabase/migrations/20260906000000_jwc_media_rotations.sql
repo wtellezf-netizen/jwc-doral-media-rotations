@@ -154,3 +154,41 @@ where not exists (select 1 from public.service_rules where name = 'Domingos 10 A
 insert into public.service_rules (name, service_kind, weekday, start_time, timezone, rotation_group)
 select 'Domingos 12:15 PM · Equipo 2 / Equipo 1', 'sunday_1215', 0, '12:15', 'America/New_York', 'domingo_1215_21'
 where not exists (select 1 from public.service_rules where name = 'Domingos 12:15 PM · Equipo 2 / Equipo 1');
+
+-- Practice lists hold new volunteers before they are promoted into a serving team.
+create table if not exists public.practice_candidates (
+  id uuid primary key default gen_random_uuid(),
+  group_id text not null,
+  name text not null,
+  position text not null,
+  target_team text,
+  status text not null default 'practice' check (status in ('practice', 'active', 'archived')),
+  created_at timestamptz not null default now()
+);
+
+-- Published announcements are readable by public visitors; edits remain coordinator-only.
+create table if not exists public.announcements (
+  id uuid primary key default gen_random_uuid(),
+  title text not null,
+  message text not null,
+  author text not null,
+  pinned boolean not null default false,
+  is_published boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table public.practice_candidates enable row level security;
+alter table public.announcements enable row level security;
+
+create policy "published announcements are public" on public.announcements
+  for select using (is_published = true);
+create policy "editors manage announcements" on public.announcements
+  for all using (exists (select 1 from public.profiles p where p.id = auth.uid() and p.role in ('admin', 'editor')))
+  with check (exists (select 1 from public.profiles p where p.id = auth.uid() and p.role in ('admin', 'editor')));
+create policy "editors manage practice candidates" on public.practice_candidates
+  for all using (exists (select 1 from public.profiles p where p.id = auth.uid() and p.role in ('admin', 'editor')))
+  with check (exists (select 1 from public.profiles p where p.id = auth.uid() and p.role in ('admin', 'editor')));
+
+create index if not exists practice_candidates_group_id_idx on public.practice_candidates(group_id);
+create index if not exists announcements_created_at_idx on public.announcements(created_at desc);
