@@ -31,3 +31,4 @@ button,select { font:inherit; } button { cursor:pointer; }
 
 @media (max-width:900px) { .practice-board { grid-template-columns:repeat(2,1fr); }.announcement-board { grid-template-columns:1fr; } }
 @media (max-width:680px) { .section-heading-row { display:grid; align-items:start; }.practice-board,.announcement-board { grid-template-columns:1fr; }.practice-form { grid-template-columns:minmax(0,1fr) 95px auto 30px; }.announcement-editor { padding:16px; }.announcement-bottom { align-items:start; flex-direction:column; }.announcement-actions { align-self:stretch; justify-content:flex-end; } }
+.login-note { margin:0; color:#7d8b8b; font-size:11px; line-height:1.5; }
