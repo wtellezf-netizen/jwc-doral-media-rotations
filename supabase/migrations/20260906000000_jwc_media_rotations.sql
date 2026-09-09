@@ -192,3 +192,26 @@ create policy "editors manage practice candidates" on public.practice_candidates
 
 create index if not exists practice_candidates_group_id_idx on public.practice_candidates(group_id);
 create index if not exists announcements_created_at_idx on public.announcements(created_at desc);
+
+-- Shared UI state keeps roster, practice lists, and announcements synchronized across devices.
+create table if not exists public.jwc_app_state (
+  key text primary key,
+  value jsonb not null,
+  updated_by uuid references auth.users(id) on delete set null,
+  updated_at timestamptz not null default now()
+);
+
+alter table public.jwc_app_state enable row level security;
+
+create policy "public can read jwc app state" on public.jwc_app_state
+  for select using (key = 'jwc');
+create policy "coordinators can write jwc app state" on public.jwc_app_state
+  for all using (
+    lower(coalesce(auth.jwt() ->> 'email', '')) = 'wtellezf@gmail.com'
+    or exists (select 1 from public.profiles p where p.id = auth.uid() and p.role in ('admin', 'editor'))
+  ) with check (
+    lower(coalesce(auth.jwt() ->> 'email', '')) = 'wtellezf@gmail.com'
+    or exists (select 1 from public.profiles p where p.id = auth.uid() and p.role in ('admin', 'editor'))
+  );
+
+create index if not exists jwc_app_state_updated_at_idx on public.jwc_app_state(updated_at desc);
