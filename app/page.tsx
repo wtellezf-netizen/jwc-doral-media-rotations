@@ -1,12 +1,14 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowUpRight, BellRing, CalendarDays, Check, CheckCircle2, ChevronRight, CircleAlert, Clock3, Filter, Gauge, Menu, Plus, Repeat2, Save, Settings2, ShieldCheck, Sparkles, Trash2, UsersRound, Video, X, XCircle } from 'lucide-react';
+import { ArrowUpRight, BellRing, CalendarDays, Check, CheckCircle2, ChevronRight, CircleAlert, Clock3, Filter, Gauge, Menu, MessageSquareText, Plus, Repeat2, Save, Settings2, ShieldCheck, Sparkles, Trash2, UsersRound, Video, X, XCircle } from 'lucide-react';
 
-type Tab = 'Resumen' | 'Calendario' | 'Equipos';
+type Tab = 'Resumen' | 'Calendario' | 'Equipos' | 'Anuncios';
 type Role = 'Wilson Tellez' | 'Frankie' | 'Adiel';
 type Person = { name: string; position: string; initials: string; color: string };
 type Team = { name: string; label: string; service: string; people: Person[] };
+type PracticeGroup = { id: string; title: string; label: string; teams: string[]; people: Person[] };
+type Announcement = { id: string; title: string; message: string; author: string; date: string; pinned: boolean };
 
 const people = (names: Array<[string, string]>, colors: string[]): Person[] => names.map(([name, position], index) => ({ name, position, initials: name.split(' ').map((part) => part[0]).join('').slice(0, 2), color: colors[index % colors.length] }));
 const teamColors = ['#11a29a', '#e6a542', '#6c75e8', '#e56f61', '#4e9ed3'];
@@ -20,6 +22,17 @@ const initialTeams: Team[] = [
   { name: 'Equipo J1', label: 'YOUNGS · ROTACIÓN', service: 'Youngs', people: people([['Antony', 'CAM1'], ['Cristina', 'CAM2'], ['Josue', 'CAM3'], ['Joel', 'SLIDER'], ['Leo', 'GRUA']], teamColors) },
   { name: 'Equipo J2', label: 'YOUNGS · ROTACIÓN', service: 'Youngs', people: people([['Daniel', 'CAM1'], ['Sara', 'CAM2'], ['Cristian', 'CAM3'], ['Niko', 'SLIDER'], ['Alberto', 'GRUA']], teamColors) },
   { name: 'Equipo J3', label: 'YOUNGS · ROTACIÓN', service: 'Youngs', people: people([['Jhon', 'CAM1'], ['Vivi', 'CAM2'], ['Alany', 'CAM3'], ['Niko', 'SLIDER'], ['Alejandro', 'GRUA']], teamColors) },
+];
+
+const initialPracticeGroups: PracticeGroup[] = [
+  { id: 'sunday-morning', title: 'Práctica · Domingo mañana', label: '10:00 AM · nuevos integrantes para A / B', teams: ['Equipo A', 'Equipo B'], people: [] },
+  { id: 'sunday-afternoon', title: 'Práctica · Domingo tarde', label: '12:15 PM · nuevos integrantes para 1 / 2', teams: ['Equipo 1', 'Equipo 2'], people: [] },
+  { id: 'youngs-practice', title: 'Práctica · Youngs', label: '1er y 3er miércoles · nuevos integrantes para J1 / J2 / J3', teams: ['Equipo J1', 'Equipo J2', 'Equipo J3'], people: [] },
+];
+
+const initialAnnouncements: Announcement[] = [
+  { id: 'welcome', title: 'Tablero de anuncios JWC Media', message: 'Aquí aparecerán los avisos importantes para todo el equipo de cámaras.', author: 'Wilson Tellez', date: 'Hoy', pinned: true },
+  { id: 'punctuality', title: 'Puntualidad en los servicios', message: 'Revisa tu asignación con anticipación y avisa si surge una indisponibilidad.', author: 'Coordinación', date: 'Hoy', pinned: false },
 ];
 
 const services = [
@@ -47,6 +60,9 @@ function App() {
   const [storageReady, setStorageReady] = useState(false);
   const [editingTeam, setEditingTeam] = useState<Team | null>(null);
   const [creatingTeam, setCreatingTeam] = useState(false);
+  const [practiceGroups, setPracticeGroups] = useState<PracticeGroup[]>(initialPracticeGroups);
+  const [announcements, setAnnouncements] = useState<Announcement[]>(initialAnnouncements);
+  const [announcementEditorOpen, setAnnouncementEditorOpen] = useState(false);
   const selectedTeam = useMemo(() => teamList.find((team) => team.name === selectedService.team) ?? teamList[0] ?? initialTeams[0], [selectedService, teamList]);
 
   useEffect(() => {
@@ -56,12 +72,26 @@ function App() {
         const parsed = JSON.parse(savedTeams) as Team[];
         if (Array.isArray(parsed)) setTeamList(parsed);
       }
+      const savedPractice = window.localStorage.getItem('jwc-doral-practice-groups');
+      if (savedPractice) {
+        const parsed = JSON.parse(savedPractice) as PracticeGroup[];
+        if (Array.isArray(parsed)) setPracticeGroups(parsed);
+      }
+      const savedAnnouncements = window.localStorage.getItem('jwc-doral-announcements');
+      if (savedAnnouncements) {
+        const parsed = JSON.parse(savedAnnouncements) as Announcement[];
+        if (Array.isArray(parsed)) setAnnouncements(parsed);
+      }
     } catch { /* If a draft is invalid, keep the starter roster. */ }
     setStorageReady(true);
   }, []);
   useEffect(() => {
-    if (storageReady) window.localStorage.setItem('jwc-doral-team-roster', JSON.stringify(teamList));
-  }, [storageReady, teamList]);
+    if (storageReady) {
+      window.localStorage.setItem('jwc-doral-team-roster', JSON.stringify(teamList));
+      window.localStorage.setItem('jwc-doral-practice-groups', JSON.stringify(practiceGroups));
+      window.localStorage.setItem('jwc-doral-announcements', JSON.stringify(announcements));
+    }
+  }, [storageReady, teamList, practiceGroups, announcements]);
 
   const notify = (message: string) => { setNotice(message); window.setTimeout(() => setNotice(''), 4200); };
   const handleGenerate = () => notify(`Turnos sugeridos para ${selectedService.type.toLowerCase()} listos. Se notificará a ${selectedTeam.people.filter((person) => !person.name.includes('libre')).length} personas.`);
@@ -75,11 +105,35 @@ function App() {
     setEditingTeam(null); setCreatingTeam(false); notify(`${normalized.name} actualizado. Los cambios quedan listos para la próxima asignación.`);
   };
   const deleteTeam = (name: string) => { setTeamList((current) => current.filter((team) => team.name !== name)); setEditingTeam(null); notify(`${name} fue retirado de la rotación.`); };
+  const addPracticePerson = (groupId: string, person: Person) => {
+    setPracticeGroups((current) => current.map((group) => group.id === groupId ? { ...group, people: [...group.people, person] } : group));
+    notify(`${person.name} fue agregado a la lista de práctica.`);
+  };
+  const promotePracticePerson = (groupId: string, personIndex: number, targetTeam: string) => {
+    const group = practiceGroups.find((item) => item.id === groupId);
+    const candidate = group?.people[personIndex];
+    if (!candidate || !targetTeam) return;
+    setTeamList((current) => current.map((team) => team.name === targetTeam ? { ...team, people: [...team.people, candidate] } : team));
+    setPracticeGroups((current) => current.map((item) => item.id === groupId ? { ...item, people: item.people.filter((_, index) => index !== personIndex) } : item));
+    notify(`${candidate.name} fue incluido en ${targetTeam}.`);
+  };
+  const removePracticePerson = (groupId: string, personIndex: number) => {
+    setPracticeGroups((current) => current.map((group) => group.id === groupId ? { ...group, people: group.people.filter((_, index) => index !== personIndex) } : group));
+    notify('La persona fue retirada de la lista de práctica.');
+  };
+  const saveAnnouncement = (draft: Omit<Announcement, 'id' | 'author' | 'date'> & { id?: string }) => {
+    const announcement: Announcement = { ...draft, id: draft.id ?? `announcement-${Date.now()}`, author: role, date: 'Hoy' };
+    setAnnouncements((current) => [announcement, ...current.filter((item) => item.id !== announcement.id)]);
+    setAnnouncementEditorOpen(false);
+    notify('Anuncio publicado para todo el equipo.');
+  };
+  const toggleAnnouncementPin = (id: string) => setAnnouncements((current) => current.map((item) => item.id === id ? { ...item, pinned: !item.pinned } : item));
+  const deleteAnnouncement = (id: string) => { setAnnouncements((current) => current.filter((item) => item.id !== id)); notify('Anuncio retirado del tablero.'); };
 
   return <main className="app-shell">
     <aside className="sidebar">
       <div className="brand-mark"><Video size={18} strokeWidth={2.5} /></div><div className="brand-copy"><span>JWC Doral</span><strong>MEDIA ROTATIONS</strong></div><button className="mobile-menu" aria-label="Abrir menú"><Menu size={20} /></button>
-      <nav className="main-nav" aria-label="Navegación principal">{(['Resumen', 'Calendario', 'Equipos'] as Tab[]).map((item) => <button key={item} className={`nav-item ${tab === item ? 'active' : ''}`} onClick={() => setTab(item)}>{item === 'Resumen' ? <Gauge size={18} /> : item === 'Calendario' ? <CalendarDays size={18} /> : <UsersRound size={18} />}<span>{item}</span>{item === 'Calendario' && <em>7</em>}</button>)}</nav>
+      <nav className="main-nav" aria-label="Navegación principal">{(['Resumen', 'Calendario', 'Equipos', 'Anuncios'] as Tab[]).map((item) => <button key={item} className={`nav-item ${tab === item ? 'active' : ''}`} onClick={() => setTab(item)}>{item === 'Resumen' ? <Gauge size={18} /> : item === 'Calendario' ? <CalendarDays size={18} /> : item === 'Equipos' ? <UsersRound size={18} /> : <MessageSquareText size={18} />}<span>{item}</span>{item === 'Calendario' && <em>7</em>}</button>)}</nav>
       <div className="sidebar-rule" /><p className="sidebar-label">OPERACIÓN</p>
       <button className="nav-item" onClick={() => notify('La siguiente generación aplicará la rotación automática por servicio.')}><Repeat2 size={18} /><span>Reglas de rotación</span></button><button className="nav-item" onClick={() => notify('Recordatorios configurados: 7 días y 24 horas antes.')}><BellRing size={18} /><span>Recordatorios</span></button><button className="nav-item" onClick={() => notify('Los permisos activos son Wilson, Frankie y Adiel.')}><ShieldCheck size={18} /><span>Permisos</span></button>
       <div className="sidebar-bottom"><div className="team-health"><span className="status-dot" /><div><strong>Operación saludable</strong><small>{teamList.length} equipos · {new Set(teamList.flatMap((team) => team.people.filter((person) => !person.name.includes('libre')).map((person) => person.name))).size} personas</small></div></div><div className="signed-user"><span className="avatar avatar-user">WT</span><div><strong>{role}</strong><small>{role === 'Wilson Tellez' ? 'Administrador' : 'Editor'}</small></div><Settings2 size={17} /></div></div>
@@ -93,11 +147,14 @@ function App() {
         <div className="workspace-grid"><section className="panel services-panel"><div className="panel-heading"><div><p className="section-kicker">AGENDA OPERATIVA</p><h3>Próximos servicios</h3></div><button className="ghost-button" onClick={() => setTab('Calendario')}>Ver calendario <ArrowUpRight size={15} /></button></div><div className="service-list">{services.map((service) => <button key={service.id} className={`service-row ${selectedService.id === service.id ? 'selected' : ''}`} onClick={() => setSelectedService(service)}><div className={`service-date date-${service.color}`}><strong>{service.date.split(' ')[0]}</strong><span>{service.date.split(' ')[1]}</span></div><div className="service-main"><div className="service-title"><strong>{service.type}</strong><span className={`tag tag-${service.tagTone}`}>{service.tag}</span></div><span className="service-meta"><Clock3 size={13} /> {service.day} · {service.time} <i /> {service.team}</span></div><div className="coverage"><strong>{service.coverage}</strong><span>asignados</span></div><ChevronRight size={17} className="chevron" /></button>)}</div></section>
           <section className="panel detail-panel"><div className="panel-heading"><div><p className="section-kicker">DETALLE DEL SERVICIO</p><h3>{selectedService.type}</h3></div><span className="detail-status"><span className="status-dot" /> {selectedService.tag}</span></div><div className="detail-date"><CalendarDays size={17} /><strong>{selectedService.day}</strong><span>·</span><span>{selectedService.time}</span></div><div className="assignment-card"><div className="assignment-header"><div><p>ASIGNACIÓN SUGERIDA</p><strong>{selectedTeam.name}</strong></div><button className="icon-button subtle" onClick={() => setShowPeople((current) => !current)} aria-label="Ver personas"><UsersRound size={17} /></button></div><div className="position-list">{selectedTeam.people.map((person) => <div className="position-row" key={`${person.name}-${person.position}`}><span className="position-label">{person.position}</span>{person.name.includes('libre') ? <span className="vacant"><CircleAlert size={14} /> pendiente</span> : <span className="person-name"><Avatar person={person} small />{person.name}</span>}<span className="assignment-check">{person.name.includes('libre') ? <Plus size={15} /> : <Check size={15} />}</span></div>)}{['MÓVIL 1', 'MÓVIL 2', 'MÓVIL 3'].map((position) => <div className="position-row" key={position}><span className="position-label">{position}</span><span className="vacant"><CircleAlert size={14} /> pendiente</span><span className="assignment-check pending"><Plus size={15} /></span></div>)}</div><div className="coverage-line"><span><strong>{selectedService.coverage}</strong> posiciones cubiertas</span><span>{selectedService.status}</span></div></div>{showPeople && <div className="people-drawer"><strong>Personas disponibles</strong><span>El algoritmo prioriza menor carga y evita dobles turnos.</span><div className="drawer-people">{teamList.slice(3, 5).flatMap((team) => team.people.slice(0, 2)).map((person) => <span key={person.name + person.position}><Avatar person={person} small />{person.name}</span>)}</div></div>}<div className="detail-actions"><button className="outline-button" onClick={() => notify('La asignación queda guardada para revisión del equipo coordinador.')}>Editar asignación</button><button className="primary-button compact" onClick={handleGenerate}><Sparkles size={16} /> Completar automáticamente</button></div></section></div>
       </>}
-      {tab === 'Calendario' && <CalendarView selectedService={selectedService} onSelect={(service) => { setSelectedService(service); setTab('Resumen'); }} />}{tab === 'Equipos' && <TeamsView teams={teamList} onEdit={setEditingTeam} onNew={() => setCreatingTeam(true)} />}
+      {tab === 'Calendario' && <CalendarView selectedService={selectedService} onSelect={(service) => { setSelectedService(service); setTab('Resumen'); }} />}
+      {tab === 'Equipos' && <TeamsView teams={teamList} practiceGroups={practiceGroups} onEdit={setEditingTeam} onNew={() => setCreatingTeam(true)} onAddPractice={addPracticePerson} onPromotePractice={promotePracticePerson} onRemovePractice={removePracticePerson} />}
+      {tab === 'Anuncios' && <AnnouncementsView announcements={announcements} onNew={() => setAnnouncementEditorOpen(true)} onTogglePin={toggleAnnouncementPin} onDelete={deleteAnnouncement} />}
       <footer className="page-footer"><span>JWC Doral · Media Rotations</span><span><span className="status-dot" /> Sistema de turnos automático</span></footer>
     </section>
     <div className="availability-bar"><span><BellRing size={17} /><strong>Tu próxima asignación</strong><span>{selectedService.type} · {selectedService.day}</span></span><div>{availability[selectedService.id] === 'accepted' ? <span className="confirmed"><CheckCircle2 size={16} /> Confirmado</span> : availability[selectedService.id] === 'declined' ? <span className="declined"><XCircle size={16} /> Buscar reemplazo</span> : <><button className="availability-button decline" onClick={() => handleAvailability('declined')}>No puedo</button><button className="availability-button accept" onClick={() => handleAvailability('accepted')}>Sí, puedo servir <Check size={15} /></button></>}</div></div>
     {(editingTeam || creatingTeam) && <TeamEditor team={editingTeam ?? { name: '', label: 'NUEVO EQUIPO', service: 'Rotación', people: [] }} onSave={(team) => saveTeam(team, editingTeam?.name)} onDelete={editingTeam ? () => deleteTeam(editingTeam.name) : undefined} onClose={() => { setEditingTeam(null); setCreatingTeam(false); }} />}
+    {announcementEditorOpen && <AnnouncementEditor onSave={saveAnnouncement} onClose={() => setAnnouncementEditorOpen(false)} />}
   </main>;
 }
 
@@ -105,8 +162,35 @@ function CalendarView({ selectedService, onSelect }: { selectedService: typeof s
   return <div className="view-stack"><div className="view-header"><div><p className="section-kicker">PLANIFICACIÓN MENSUAL</p><h2>Septiembre 2026</h2><p>Los servicios recurrentes se generan automáticamente según las reglas de JWC Doral.</p></div><div className="calendar-actions"><button className="outline-button"><Filter size={16} /> Filtrar</button><button className="primary-button"><Plus size={17} /> Evento especial</button></div></div><div className="calendar-layout"><section className="panel month-panel"><div className="month-toolbar"><button className="icon-button"><ChevronRight size={17} className="rotate-180" /></button><strong>Septiembre 2026</strong><button className="icon-button"><ChevronRight size={17} /></button></div><div className="weekdays">{['DOM', 'LUN', 'MAR', 'MIÉ', 'JUE', 'VIE', 'SÁB'].map((day) => <span key={day}>{day}</span>)}</div><div className="month-grid">{monthDays.flatMap((week, weekIndex) => week.map((day, dayIndex) => <div className={`calendar-cell ${day === '5' ? 'today' : ''}`} key={`${weekIndex}-${dayIndex}`}>{day && <><span className="calendar-number">{day}</span>{eventByDay[day] && <div className={`calendar-event event-${eventByDay[day]}`}>{eventByDay[day] === 'viernes' ? 'Viernes · 8 PM' : eventByDay[day] === 'youngs' ? 'Youngs · 7:30 PM' : 'Domingos · 2 servicios'}</div>}</>}</div>))}</div></section><aside className="panel rules-panel"><p className="section-kicker">REGLAS ACTIVAS</p><h3>La agenda se cuida sola</h3><div className="rule-item"><span className="rule-icon teal-bg"><Repeat2 size={17} /></span><div><strong>Viernes</strong><span>Todos los viernes · 8:00 PM</span></div><CheckCircle2 size={16} className="rule-check" /></div><div className="rule-item"><span className="rule-icon violet-bg"><CalendarDays size={17} /></span><div><strong>Domingos · 10:00 AM</strong><span>B este domingo → A el siguiente → repetir</span><div className="rule-secondary">Los Teams A y B alternan en el primer servicio.</div></div><CheckCircle2 size={16} className="rule-check" /></div><div className="rule-item"><span className="rule-icon amber-bg"><CalendarDays size={17} /></span><div><strong>Domingos · 12:15 PM</strong><span>2 este domingo → 1 el siguiente → repetir</span><div className="rule-secondary">Los Teams 1 y 2 alternan en el segundo servicio.</div></div><CheckCircle2 size={16} className="rule-check" /></div><div className="rule-item"><span className="rule-icon blue-bg"><Sparkles size={17} /></span><div><strong>Youngs</strong><span>1er y 3er miércoles · rotación J1/J2/J3</span></div><CheckCircle2 size={16} className="rule-check" /></div><div className="rule-item"><span className="rule-icon blue-bg"><Plus size={17} /></span><div><strong>Eventos especiales</strong><span>Se agregan manualmente</span></div><CheckCircle2 size={16} className="rule-check" /></div><div className="rule-note"><CircleAlert size={16} /><span>El sistema avisa 7 días y 24 horas antes. Si alguien rechaza, propone reemplazos por disponibilidad y carga.</span></div></aside></div><div className="panel upcoming-panel"><div className="panel-heading"><div><p className="section-kicker">SELECCIONA UN TURNO</p><h3>Servicios generados</h3></div><span className="ghost-count">6 servicios próximos</span></div><div className="upcoming-grid">{services.map((service) => <button key={service.id} className={`upcoming-card ${selectedService.id === service.id ? 'selected' : ''}`} onClick={() => onSelect(service)}><span className={`service-dot dot-${service.color}`} /><strong>{service.type}</strong><span>{service.day} · {service.time}</span><small>{service.team} · {service.coverage}</small></button>)}</div></div></div>;
 }
 
-function TeamsView({ teams, onEdit, onNew }: { teams: Team[]; onEdit: (team: Team) => void; onNew: () => void }) {
-  return <div className="view-stack"><div className="view-header"><div><p className="section-kicker">PERSONAS Y POSICIONES</p><h2>Equipos de servicio</h2><p>Revisa cada team y ajusta participantes, posiciones o equipos completos.</p></div><button className="primary-button" onClick={onNew}><Plus size={17} /> Nuevo equipo</button></div><div className="team-grid">{teams.map((team, index) => <article className="team-card" key={team.name}><div className="team-card-top"><div><span className={`team-index team-index-${index % 4}`}>{String(index + 1).padStart(2, '0')}</span><div><h3>{team.name}</h3><p>{team.label}</p></div></div><button className="icon-button subtle" onClick={() => onEdit(team)} aria-label={`Editar ${team.name}`}><Settings2 size={17} /></button></div><div className="team-people">{team.people.map((person) => <div className="team-person" key={person.name + person.position}><Avatar person={person} small /><span><strong>{person.name}</strong><small>{person.position}</small></span>{person.name.includes('libre') && <span className="vacancy-pill">Libre</span>}</div>)}</div><div className="team-card-footer"><span>{team.people.length} participantes</span><button onClick={() => onEdit(team)}>Editar equipo <ChevronRight size={15} /></button></div></article>)}</div><div className="permission-panel panel"><div className="permission-copy"><span className="rule-icon violet-bg"><ShieldCheck size={18} /></span><div><p className="section-kicker">ACCESO COMPARTIDO</p><h3>3 personas pueden hacer cambios</h3><p>El sitio es público para consultar la agenda. La coordinación queda reservada para Wilson, Frankie y Adiel.</p></div></div><div className="permission-people"><div><span className="avatar avatar-user">WT</span><span><strong>Wilson Tellez</strong><small>Administrador</small></span></div><div><span className="avatar" style={{ background: '#e6a542' }}>FR</span><span><strong>Frankie</strong><small>Editor</small></span></div><div><span className="avatar" style={{ background: '#6c75e8' }}>AD</span><span><strong>Adiel</strong><small>Editor</small></span></div></div></div></div>;
+function TeamsView({ teams, practiceGroups, onEdit, onNew, onAddPractice, onPromotePractice, onRemovePractice }: { teams: Team[]; practiceGroups: PracticeGroup[]; onEdit: (team: Team) => void; onNew: () => void; onAddPractice: (groupId: string, person: Person) => void; onPromotePractice: (groupId: string, personIndex: number, targetTeam: string) => void; onRemovePractice: (groupId: string, personIndex: number) => void }) {
+  return <div className="view-stack"><div className="view-header"><div><p className="section-kicker">PERSONAS Y POSICIONES</p><h2>Equipos de servicio</h2><p>Revisa cada team y ajusta participantes, posiciones o equipos completos.</p></div><button className="primary-button" onClick={onNew}><Plus size={17} /> Nuevo equipo</button></div><div className="team-grid">{teams.map((team, index) => <article className="team-card" key={team.name}><div className="team-card-top"><div><span className={`team-index team-index-${index % 4}`}>{String(index + 1).padStart(2, '0')}</span><div><h3>{team.name}</h3><p>{team.label}</p></div></div><button className="icon-button subtle" onClick={() => onEdit(team)} aria-label={`Editar ${team.name}`}><Settings2 size={17} /></button></div><div className="team-people">{team.people.map((person) => <div className="team-person" key={person.name + person.position}><Avatar person={person} small /><span><strong>{person.name}</strong><small>{person.position}</small></span>{person.name.includes('libre') && <span className="vacancy-pill">Libre</span>}</div>)}</div><div className="team-card-footer"><span>{team.people.length} participantes</span><button onClick={() => onEdit(team)}>Editar equipo <ChevronRight size={15} /></button></div></article>)}</div><PracticeBoard groups={practiceGroups} onAdd={onAddPractice} onPromote={onPromotePractice} onRemove={onRemovePractice} /><div className="permission-panel panel"><div className="permission-copy"><span className="rule-icon violet-bg"><ShieldCheck size={18} /></span><div><p className="section-kicker">ACCESO COMPARTIDO</p><h3>3 personas pueden hacer cambios</h3><p>El sitio es público para consultar la agenda. La coordinación queda reservada para Wilson, Frankie y Adiel.</p></div></div><div className="permission-people"><div><span className="avatar avatar-user">WT</span><span><strong>Wilson Tellez</strong><small>Administrador</small></span></div><div><span className="avatar" style={{ background: '#e6a542' }}>FR</span><span><strong>Frankie</strong><small>Editor</small></span></div><div><span className="avatar" style={{ background: '#6c75e8' }}>AD</span><span><strong>Adiel</strong><small>Editor</small></span></div></div></div></div>;
+}
+
+function PracticeBoard({ groups, onAdd, onPromote, onRemove }: { groups: PracticeGroup[]; onAdd: (groupId: string, person: Person) => void; onPromote: (groupId: string, personIndex: number, targetTeam: string) => void; onRemove: (groupId: string, personIndex: number) => void }) {
+  const [openGroupId, setOpenGroupId] = useState<string | null>(null);
+  const [name, setName] = useState('');
+  const [position, setPosition] = useState('CAM1');
+  const [targets, setTargets] = useState<Record<string, string>>({});
+  const openGroup = groups.find((group) => group.id === openGroupId);
+  const openForm = (group: PracticeGroup) => { setOpenGroupId(group.id); setName(''); setPosition('CAM1'); };
+  const submit = () => {
+    if (!openGroup || !name.trim()) return;
+    const person: Person = { name: name.trim(), position, initials: name.trim().split(' ').map((part) => part[0]).join('').slice(0, 2), color: teamColors[openGroup.people.length % teamColors.length] };
+    onAdd(openGroup.id, person); setName(''); setPosition('CAM1');
+  };
+  return <section className="practice-section"><div className="section-heading-row"><div><p className="section-kicker">CRECIMIENTO DEL EQUIPO</p><h3>Práctica · Nuevos integrantes</h3><p>Agrega personas para entrenarlas y luego inclúyelas en el team que corresponda.</p></div><span className="soft-status"><Sparkles size={14} /> incorporación gradual</span></div><div className="practice-board">{groups.map((group) => <article className="practice-card" key={group.id}><div className="practice-card-top"><div><span className="practice-icon"><UsersRound size={17} /></span><div><h4>{group.title}</h4><p>{group.label}</p></div></div><span className="practice-count">{group.people.length}</span></div><div className="practice-people">{group.people.length === 0 ? <div className="practice-empty"><UsersRound size={18} /><span>Aún no hay personas en práctica.</span></div> : group.people.map((person, index) => { const targetKey = `${group.id}-${index}`; const target = targets[targetKey] ?? group.teams[0]; return <div className="practice-person" key={`${person.name}-${index}`}><Avatar person={person} small /><div><strong>{person.name}</strong><small>{person.position}</small></div><div className="practice-person-actions"><select value={target} onChange={(event) => setTargets((current) => ({ ...current, [targetKey]: event.target.value }))} aria-label={`Team destino para ${person.name}`}>{group.teams.map((team) => <option key={team}>{team}</option>)}</select><button className="mini-primary" onClick={() => onPromote(group.id, index, target)}>Incluir</button><button className="remove-person mini-remove" onClick={() => onRemove(group.id, index)} aria-label={`Retirar a ${person.name}`}><Trash2 size={14} /></button></div></div> })}</div>{openGroupId === group.id ? <div className="practice-form"><input value={name} onChange={(event) => setName(event.target.value)} placeholder="Nombre del nuevo integrante" aria-label="Nombre del nuevo integrante" /><select value={position} onChange={(event) => setPosition(event.target.value)} aria-label="Posición de práctica">{['CAM1', 'CAM2', 'CAM3', 'SLIDER', 'GRUA', 'MÓVIL 1', 'MÓVIL 2', 'MÓVIL 3'].map((item) => <option key={item}>{item}</option>)}</select><button className="primary-button compact" onClick={submit}><Save size={15} /> Guardar</button><button className="icon-button" onClick={() => setOpenGroupId(null)} aria-label="Cancelar"><X size={15} /></button></div> : <button className="practice-add" onClick={() => openForm(group)}><Plus size={15} /> Añadir persona a práctica</button>}</article>)}</div></section>;
+}
+
+function AnnouncementsView({ announcements, onNew, onTogglePin, onDelete }: { announcements: Announcement[]; onNew: () => void; onTogglePin: (id: string) => void; onDelete: (id: string) => void }) {
+  const ordered = [...announcements].sort((a, b) => Number(b.pinned) - Number(a.pinned));
+  return <div className="view-stack"><div className="view-header"><div><p className="section-kicker">COMUNICACIÓN DEL EQUIPO</p><h2>Tablero de anuncios</h2><p>Mensajes visibles para todos los integrantes de JWC Media.</p></div><button className="primary-button" onClick={onNew}><Plus size={17} /> Nuevo anuncio</button></div><div className="announcement-board">{ordered.map((announcement) => <article className={`announcement-card ${announcement.pinned ? 'pinned' : ''}`} key={announcement.id}><div className="announcement-top"><span className="announcement-icon"><MessageSquareText size={18} /></span><div><div className="announcement-title-row"><h3>{announcement.title}</h3>{announcement.pinned && <span className="pin-pill">Fijado</span>}</div><p className="announcement-message">{announcement.message}</p></div></div><div className="announcement-bottom"><span><strong>{announcement.author}</strong> · {announcement.date}</span><div className="announcement-actions"><button className="ghost-button" onClick={() => onTogglePin(announcement.id)}>{announcement.pinned ? 'Desfijar' : 'Fijar'}</button><button className="icon-button subtle" onClick={() => onDelete(announcement.id)} aria-label={`Eliminar ${announcement.title}`}><Trash2 size={16} /></button></div></div></article>)}</div></div>;
+}
+
+function AnnouncementEditor({ onSave, onClose }: { onSave: (draft: Omit<Announcement, 'id' | 'author' | 'date'>) => void; onClose: () => void }) {
+  const [title, setTitle] = useState('');
+  const [message, setMessage] = useState('');
+  const [pinned, setPinned] = useState(false);
+  return <div className="editor-overlay" role="dialog" aria-modal="true" aria-label="Nuevo anuncio"><section className="announcement-editor panel"><div className="editor-heading"><div><p className="section-kicker">COMUNICACIÓN</p><h2>Nuevo anuncio</h2><p>El mensaje quedará visible para todo el equipo.</p></div><button className="icon-button" onClick={onClose} aria-label="Cerrar editor"><X size={18} /></button></div><div className="announcement-fields"><label>Título<input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Ej. Reunión de preparación" /></label><label>Mensaje<textarea value={message} onChange={(event) => setMessage(event.target.value)} placeholder="Escribe el anuncio para todos..." rows={5} /></label><label className="pin-check"><input type="checkbox" checked={pinned} onChange={(event) => setPinned(event.target.checked)} /> Fijar este anuncio arriba</label></div><div className="editor-actions"><span /><button className="outline-button" onClick={onClose}>Cancelar</button><button className="primary-button" disabled={!title.trim() || !message.trim()} onClick={() => onSave({ title: title.trim(), message: message.trim(), pinned })}><Save size={16} /> Publicar anuncio</button></div></section></div>;
 }
 
 function TeamEditor({ team, onSave, onDelete, onClose }: { team: Team; onSave: (team: Team) => void; onDelete?: () => void; onClose: () => void }) {
