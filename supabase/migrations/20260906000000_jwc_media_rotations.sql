@@ -133,3 +133,24 @@ create policy "editors manage assignments" on public.assignments for all using (
 -- Wilson Tellez should be promoted to admin; Frankie and Adiel should be editors after their Auth users are created:
 -- update public.profiles set role = 'admin' where display_name = 'Wilson Tellez';
 -- update public.profiles set role = 'editor' where display_name in ('Frankie', 'Adiel');
+
+-- Initial JWC schedule seed: Sundays alternate B/A at 10:00 AM and 2/1 at 12:15 PM.
+insert into public.positions (code, label, sort_order) values
+  ('CAM1', 'Cámara 1', 1), ('CAM2', 'Cámara 2', 2), ('CAM3', 'Cámara 3', 3),
+  ('SLIDER', 'Slider', 4), ('GRUA', 'Grúa', 5), ('MOVIL1', 'Móvil 1', 6),
+  ('MOVIL2', 'Móvil 2', 7), ('MOVIL3', 'Móvil 3', 8)
+on conflict (code) do update set label = excluded.label, sort_order = excluded.sort_order;
+
+insert into public.teams (name, label, service_kind) values
+  ('Equipo A', 'DOMINGO · 10:00 AM', 'sunday_10'),
+  ('Equipo B', 'DOMINGO · 10:00 AM', 'sunday_10'),
+  ('Equipo 1', 'DOMINGO · 12:15 PM', 'sunday_1215'),
+  ('Equipo 2', 'DOMINGO · 12:15 PM', 'sunday_1215')
+on conflict (name) do update set label = excluded.label, service_kind = excluded.service_kind;
+
+insert into public.service_rules (name, service_kind, weekday, start_time, timezone, rotation_group)
+select 'Domingos 10 AM · Equipo B / Equipo A', 'sunday_10', 0, '10:00', 'America/New_York', 'domingo_10_ab'
+where not exists (select 1 from public.service_rules where name = 'Domingos 10 AM · Equipo B / Equipo A');
+insert into public.service_rules (name, service_kind, weekday, start_time, timezone, rotation_group)
+select 'Domingos 12:15 PM · Equipo 2 / Equipo 1', 'sunday_1215', 0, '12:15', 'America/New_York', 'domingo_1215_21'
+where not exists (select 1 from public.service_rules where name = 'Domingos 12:15 PM · Equipo 2 / Equipo 1');
