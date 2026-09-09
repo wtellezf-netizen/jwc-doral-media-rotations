@@ -2,9 +2,11 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { ArrowUpRight, BellRing, CalendarDays, Check, CheckCircle2, ChevronRight, CircleAlert, Clock3, Filter, Gauge, Menu, MessageSquareText, Plus, Repeat2, Save, Settings2, ShieldCheck, Sparkles, Trash2, UsersRound, Video, X, XCircle } from 'lucide-react';
+import { clearSession, getCurrentUser, getProfile, loadCloudState, requestMagicLink, restoreSession, saveCloudState, type CloudSession } from '../lib/supabase';
 
 type Tab = 'Resumen' | 'Calendario' | 'Equipos' | 'Anuncios';
-type Role = 'Wilson Tellez' | 'Frankie' | 'Adiel';
+type Role = 'Wilson Tellez' | 'Frankie' | 'Adiel' | 'Visitante';
+type CurrentUser = { id: string; email: string; displayName: string; role: 'admin' | 'editor' | 'member' };
 type Person = { name: string; position: string; initials: string; color: string };
 type Team = { name: string; label: string; service: string; people: Person[] };
 type PracticeGroup = { id: string; title: string; label: string; teams: string[]; people: Person[] };
@@ -53,6 +55,10 @@ function App() {
   const [tab, setTab] = useState<Tab>('Resumen');
   const [selectedService, setSelectedService] = useState(services[0]);
   const [role, setRole] = useState<Role>('Wilson Tellez');
+  const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
+  const [session, setSession] = useState<CloudSession | null>(null);
+  const [loginOpen, setLoginOpen] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<'loading' | 'synced' | 'local' | 'error'>('loading');
   const [notice, setNotice] = useState('');
   const [availability, setAvailability] = useState<Record<string, 'accepted' | 'declined'>>({});
   const [showPeople, setShowPeople] = useState(false);
@@ -65,25 +71,43 @@ function App() {
   const [announcementEditorOpen, setAnnouncementEditorOpen] = useState(false);
   const selectedTeam = useMemo(() => teamList.find((team) => team.name === selectedService.team) ?? teamList[0] ?? initialTeams[0], [selectedService, teamList]);
 
+  const canEdit = currentUser?.role === 'admin' || currentUser?.role === 'editor';
+  const applyCloudState = (cloud: Awaited<ReturnType<typeof loadCloudState>>) => {
+    if (!cloud) return false;
+    if (Array.isArray(cloud.teams)) setTeamList(cloud.teams as Team[]);
+    if (Array.isArray(cloud.practiceGroups)) setPracticeGroups(cloud.practiceGroups as PracticeGroup[]);
+    if (Array.isArray(cloud.announcements)) setAnnouncements(cloud.announcements as Announcement[]);
+    return true;
+  };
   useEffect(() => {
-    try {
-      const savedTeams = window.localStorage.getItem('jwc-doral-team-roster');
-      if (savedTeams) {
-        const parsed = JSON.parse(savedTeams) as Team[];
-        if (Array.isArray(parsed)) setTeamList(parsed);
-      }
-      const savedPractice = window.localStorage.getItem('jwc-doral-practice-groups');
-      if (savedPractice) {
-        const parsed = JSON.parse(savedPractice) as PracticeGroup[];
-        if (Array.isArray(parsed)) setPracticeGroups(parsed);
-      }
-      const savedAnnouncements = window.localStorage.getItem('jwc-doral-announcements');
-      if (savedAnnouncements) {
-        const parsed = JSON.parse(savedAnnouncements) as Announcement[];
-        if (Array.isArray(parsed)) setAnnouncements(parsed);
-      }
-    } catch { /* If a draft is invalid, keep the starter roster. */ }
-    setStorageReady(true);
+    const load = async () => {
+      try {
+        const savedTeams = window.localStorage.getItem('jwc-doral-team-roster');
+        if (savedTeams) { const parsed = JSON.parse(savedTeams) as Team[]; if (Array.isArray(parsed)) setTeamList(parsed); }
+        const savedPractice = window.localStorage.getItem('jwc-doral-practice-groups');
+        if (savedPractice) { const parsed = JSON.parse(savedPractice) as PracticeGroup[]; if (Array.isArray(parsed)) setPracticeGroups(parsed); }
+        const savedAnnouncements = window.localStorage.getItem('jwc-doral-announcements');
+        if (savedAnnouncements) { const parsed = JSON.parse(savedAnnouncements) as Announcement[]; if (Array.isArray(parsed)) setAnnouncements(parsed); }
+      } catch { /* If a draft is invalid, keep the starter roster. */ }
+      const restored = restoreSession();
+      let activeSession = restored;
+      try {
+        if (restored?.accessToken) {
+          const authUser = await getCurrentUser(restored);
+          activeSession = { ...restored, userId: authUser.id, email: authUser.email ?? restored.email ?? '' };
+          const profile = await getProfile(activeSession);
+          const userRole = activeSession.email?.toLowerCase() === 'wtellezf@gmail.com' ? 'admin' : profile?.role ?? 'member';
+          const displayName = profile?.display_name ?? authUser.user_metadata?.display_name ?? authUser.user_metadata?.full_name ?? activeSession.email ?? 'Usuario';
+          setCurrentUser({ id: authUser.id, email: activeSession.email ?? '', displayName, role: userRole });
+          setRole(displayName === 'Frankie' || displayName === 'Adiel' ? displayName : 'Wilson Tellez');
+          setSession(activeSession);
+        }
+        const cloud = await loadCloudState(activeSession);
+        setSyncStatus(applyCloudState(cloud) ? 'synced' : activeSession ? 'synced' : 'local');
+      } catch { setSyncStatus(activeSession ? 'error' : 'local'); }
+      setStorageReady(true);
+    };
+    void load();
   }, []);
   useEffect(() => {
     if (storageReady) {
@@ -93,42 +117,74 @@ function App() {
     }
   }, [storageReady, teamList, practiceGroups, announcements]);
 
+  useEffect(() => {
+    if (!storageReady) return;
+    const timer = window.setInterval(async () => {
+      try {
+        const cloud = await loadCloudState(session);
+        if (applyCloudState(cloud)) setSyncStatus('synced');
+      } catch { setSyncStatus('error'); }
+    }, 15000);
+    return () => window.clearInterval(timer);
+  }, [storageReady, session]);
+
   const notify = (message: string) => { setNotice(message); window.setTimeout(() => setNotice(''), 4200); };
+  const requireEditor = () => { if (canEdit) return true; setLoginOpen(true); notify('Inicia sesión para hacer cambios compartidos.'); return false; };
+  const syncState = async (next: { teams: Team[]; practiceGroups: PracticeGroup[]; announcements: Announcement[] }) => {
+    if (!session?.userId || !canEdit) { setSyncStatus('local'); return; }
+    try { await saveCloudState(next, session); setSyncStatus('synced'); }
+    catch { setSyncStatus('error'); notify('No se pudo sincronizar. Revisa tu conexión e inténtalo de nuevo.'); }
+  };
+  const handleLogin = async (email: string) => {
+    try { await requestMagicLink(email.trim().toLowerCase()); setLoginOpen(false); notify('Revisa tu correo: enviamos un enlace seguro para entrar.'); }
+    catch { notify('No se pudo enviar el enlace. Verifica el correo e inténtalo de nuevo.'); }
+  };
+  const handleLogout = () => { clearSession(); setSession(null); setCurrentUser(null); setRole('Visitante'); setSyncStatus('local'); notify('Sesión cerrada. El sitio continúa disponible para consulta.'); };
   const handleGenerate = () => notify(`Turnos sugeridos para ${selectedService.type.toLowerCase()} listos. Se notificará a ${selectedTeam.people.filter((person) => !person.name.includes('libre')).length} personas.`);
   const handleAvailability = (state: 'accepted' | 'declined') => { setAvailability((current) => ({ ...current, [selectedService.id]: state })); notify(state === 'accepted' ? 'Disponibilidad confirmada para este servicio.' : 'Marcado como no disponible. El sistema buscará un reemplazo.'); };
   const saveTeam = (updatedTeam: Team, originalName?: string) => {
+    if (!requireEditor()) return;
     if (!updatedTeam.name.trim()) { notify('Escribe un nombre para el equipo.'); return; }
     if (teamList.some((team) => team.name.toLowerCase() === updatedTeam.name.trim().toLowerCase() && team.name !== originalName)) { notify('Ya existe un equipo con ese nombre.'); return; }
     const normalized = { ...updatedTeam, name: updatedTeam.name.trim(), people: updatedTeam.people.filter((person) => person.name.trim()) };
-    setTeamList((current) => originalName ? current.map((team) => team.name === originalName ? normalized : team) : [...current, normalized]);
+    const nextTeams = originalName ? teamList.map((team) => team.name === originalName ? normalized : team) : [...teamList, normalized];
+    setTeamList(nextTeams); void syncState({ teams: nextTeams, practiceGroups, announcements });
     if (originalName && selectedService.team === originalName) setSelectedService((current) => ({ ...current, team: normalized.name }));
     setEditingTeam(null); setCreatingTeam(false); notify(`${normalized.name} actualizado. Los cambios quedan listos para la próxima asignación.`);
   };
-  const deleteTeam = (name: string) => { setTeamList((current) => current.filter((team) => team.name !== name)); setEditingTeam(null); notify(`${name} fue retirado de la rotación.`); };
+  const deleteTeam = (name: string) => { if (!requireEditor()) return; const nextTeams = teamList.filter((team) => team.name !== name); setTeamList(nextTeams); void syncState({ teams: nextTeams, practiceGroups, announcements }); setEditingTeam(null); notify(`${name} fue retirado de la rotación.`); };
   const addPracticePerson = (groupId: string, person: Person) => {
-    setPracticeGroups((current) => current.map((group) => group.id === groupId ? { ...group, people: [...group.people, person] } : group));
+    if (!requireEditor()) return;
+    const nextPractice = practiceGroups.map((group) => group.id === groupId ? { ...group, people: [...group.people, person] } : group);
+    setPracticeGroups(nextPractice); void syncState({ teams: teamList, practiceGroups: nextPractice, announcements });
     notify(`${person.name} fue agregado a la lista de práctica.`);
   };
   const promotePracticePerson = (groupId: string, personIndex: number, targetTeam: string) => {
+    if (!requireEditor()) return;
     const group = practiceGroups.find((item) => item.id === groupId);
     const candidate = group?.people[personIndex];
     if (!candidate || !targetTeam) return;
-    setTeamList((current) => current.map((team) => team.name === targetTeam ? { ...team, people: [...team.people, candidate] } : team));
-    setPracticeGroups((current) => current.map((item) => item.id === groupId ? { ...item, people: item.people.filter((_, index) => index !== personIndex) } : item));
+    const nextTeams = teamList.map((team) => team.name === targetTeam ? { ...team, people: [...team.people, candidate] } : team);
+    const nextPractice = practiceGroups.map((item) => item.id === groupId ? { ...item, people: item.people.filter((_, index) => index !== personIndex) } : item);
+    setTeamList(nextTeams); setPracticeGroups(nextPractice); void syncState({ teams: nextTeams, practiceGroups: nextPractice, announcements });
     notify(`${candidate.name} fue incluido en ${targetTeam}.`);
   };
   const removePracticePerson = (groupId: string, personIndex: number) => {
-    setPracticeGroups((current) => current.map((group) => group.id === groupId ? { ...group, people: group.people.filter((_, index) => index !== personIndex) } : group));
+    if (!requireEditor()) return;
+    const nextPractice = practiceGroups.map((group) => group.id === groupId ? { ...group, people: group.people.filter((_, index) => index !== personIndex) } : group);
+    setPracticeGroups(nextPractice); void syncState({ teams: teamList, practiceGroups: nextPractice, announcements });
     notify('La persona fue retirada de la lista de práctica.');
   };
   const saveAnnouncement = (draft: Omit<Announcement, 'id' | 'author' | 'date'> & { id?: string }) => {
-    const announcement: Announcement = { ...draft, id: draft.id ?? `announcement-${Date.now()}`, author: role, date: 'Hoy' };
-    setAnnouncements((current) => [announcement, ...current.filter((item) => item.id !== announcement.id)]);
+    if (!requireEditor()) return;
+    const announcement: Announcement = { ...draft, id: draft.id ?? `announcement-${Date.now()}`, author: currentUser?.displayName ?? role, date: 'Hoy' };
+    const nextAnnouncements = [announcement, ...announcements.filter((item) => item.id !== announcement.id)];
+    setAnnouncements(nextAnnouncements); void syncState({ teams: teamList, practiceGroups, announcements: nextAnnouncements });
     setAnnouncementEditorOpen(false);
     notify('Anuncio publicado para todo el equipo.');
   };
-  const toggleAnnouncementPin = (id: string) => setAnnouncements((current) => current.map((item) => item.id === id ? { ...item, pinned: !item.pinned } : item));
-  const deleteAnnouncement = (id: string) => { setAnnouncements((current) => current.filter((item) => item.id !== id)); notify('Anuncio retirado del tablero.'); };
+  const toggleAnnouncementPin = (id: string) => { if (!requireEditor()) return; const nextAnnouncements = announcements.map((item) => item.id === id ? { ...item, pinned: !item.pinned } : item); setAnnouncements(nextAnnouncements); void syncState({ teams: teamList, practiceGroups, announcements: nextAnnouncements }); };
+  const deleteAnnouncement = (id: string) => { if (!requireEditor()) return; const nextAnnouncements = announcements.filter((item) => item.id !== id); setAnnouncements(nextAnnouncements); void syncState({ teams: teamList, practiceGroups, announcements: nextAnnouncements }); notify('Anuncio retirado del tablero.'); };
 
   return <main className="app-shell">
     <aside className="sidebar">
@@ -139,7 +195,7 @@ function App() {
       <div className="sidebar-bottom"><div className="team-health"><span className="status-dot" /><div><strong>Operación saludable</strong><small>{teamList.length} equipos · {new Set(teamList.flatMap((team) => team.people.filter((person) => !person.name.includes('libre')).map((person) => person.name))).size} personas</small></div></div><div className="signed-user"><span className="avatar avatar-user">WT</span><div><strong>{role}</strong><small>{role === 'Wilson Tellez' ? 'Administrador' : 'Editor'}</small></div><Settings2 size={17} /></div></div>
     </aside>
     <section className="content-area">
-      <header className="topbar"><div><p className="eyebrow">JESUS WORSHIP CENTER · DORAL</p><h1>{tab === 'Resumen' ? 'Centro de coordinación' : tab}</h1></div><div className="topbar-actions"><div className="role-switcher"><span className="online-dot" /><select value={role} onChange={(event) => setRole(event.target.value as Role)} aria-label="Usuario activo"><option>Wilson Tellez</option><option>Frankie</option><option>Adiel</option></select><span className="role-tag">{role === 'Wilson Tellez' ? 'ADMIN' : 'EDITOR'}</span></div><button className="icon-button" aria-label="Notificaciones" onClick={() => notify('No tienes notificaciones nuevas.')}><BellRing size={19} /></button><button className="primary-button" onClick={handleGenerate}><Sparkles size={17} /> Generar turnos</button></div></header>
+      <header className="topbar"><div><p className="eyebrow">JESUS WORSHIP CENTER · DORAL</p><h1>{tab === 'Resumen' ? 'Centro de coordinación' : tab}</h1></div><div className="topbar-actions"><div className="role-switcher"><span className="online-dot" /><select value={currentUser ? role : 'Visitante'} disabled aria-label="Usuario activo"><option>Wilson Tellez</option><option>Frankie</option><option>Adiel</option><option>Visitante</option></select><span className="role-tag">{currentUser?.role === 'admin' ? 'ADMIN' : currentUser?.role === 'editor' ? 'EDITOR' : 'CONSULTA'}</span></div>{currentUser ? <button className="outline-button compact" onClick={handleLogout}>Salir</button> : <button className="outline-button compact" onClick={() => setLoginOpen(true)}>Iniciar sesión</button>}<button className="icon-button" aria-label="Notificaciones" onClick={() => notify('No tienes notificaciones nuevas.')}><BellRing size={19} /></button><button className="primary-button" onClick={handleGenerate}><Sparkles size={17} /> Generar turnos</button></div></header>
       {notice && <div className="toast" role="status"><CheckCircle2 size={18} />{notice}<button onClick={() => setNotice('')} aria-label="Cerrar aviso"><X size={16} /></button></div>}
       {tab === 'Resumen' && <>
         <div className="hero-row"><div><p className="section-kicker">SEMANA DEL 7 AL 13 DE SEPTIEMBRE</p><h2>Todo listo para servir.</h2><p className="hero-subtitle">La agenda se actualiza sola. Revisa quién sirve, confirma disponibilidad y deja que la rotación haga el resto.</p></div><div className="next-service"><div className="next-service-top"><span>PRÓXIMO SERVICIO</span><span className="live-pill"><span className="status-dot" /> automático</span></div><strong>Viernes 11 · 8:00 PM</strong><small>Servicio de viernes · Equipo Viernes</small><div className="mini-avatars">{teamList[2]?.people.slice(0, 4).map((person) => <Avatar key={person.name + person.position} person={person} small />)}<span className="more-avatar">+4</span></div></div></div>
@@ -150,11 +206,12 @@ function App() {
       {tab === 'Calendario' && <CalendarView selectedService={selectedService} onSelect={(service) => { setSelectedService(service); setTab('Resumen'); }} />}
       {tab === 'Equipos' && <TeamsView teams={teamList} practiceGroups={practiceGroups} onEdit={setEditingTeam} onNew={() => setCreatingTeam(true)} onAddPractice={addPracticePerson} onPromotePractice={promotePracticePerson} onRemovePractice={removePracticePerson} />}
       {tab === 'Anuncios' && <AnnouncementsView announcements={announcements} onNew={() => setAnnouncementEditorOpen(true)} onTogglePin={toggleAnnouncementPin} onDelete={deleteAnnouncement} />}
-      <footer className="page-footer"><span>JWC Doral · Media Rotations</span><span><span className="status-dot" /> Sistema de turnos automático</span></footer>
+      <footer className="page-footer"><span>JWC Doral · Media Rotations</span><span><span className="status-dot" /> {syncStatus === 'synced' ? 'Sincronizado con Supabase' : syncStatus === 'error' ? 'Revisar sincronización' : syncStatus === 'loading' ? 'Conectando con Supabase' : 'Modo consulta'}</span></footer>
     </section>
     <div className="availability-bar"><span><BellRing size={17} /><strong>Tu próxima asignación</strong><span>{selectedService.type} · {selectedService.day}</span></span><div>{availability[selectedService.id] === 'accepted' ? <span className="confirmed"><CheckCircle2 size={16} /> Confirmado</span> : availability[selectedService.id] === 'declined' ? <span className="declined"><XCircle size={16} /> Buscar reemplazo</span> : <><button className="availability-button decline" onClick={() => handleAvailability('declined')}>No puedo</button><button className="availability-button accept" onClick={() => handleAvailability('accepted')}>Sí, puedo servir <Check size={15} /></button></>}</div></div>
     {(editingTeam || creatingTeam) && <TeamEditor team={editingTeam ?? { name: '', label: 'NUEVO EQUIPO', service: 'Rotación', people: [] }} onSave={(team) => saveTeam(team, editingTeam?.name)} onDelete={editingTeam ? () => deleteTeam(editingTeam.name) : undefined} onClose={() => { setEditingTeam(null); setCreatingTeam(false); }} />}
     {announcementEditorOpen && <AnnouncementEditor onSave={saveAnnouncement} onClose={() => setAnnouncementEditorOpen(false)} />}
+    {loginOpen && <LoginDialog onSubmit={handleLogin} onClose={() => setLoginOpen(false)} />}
   </main>;
 }
 
@@ -191,6 +248,11 @@ function AnnouncementEditor({ onSave, onClose }: { onSave: (draft: Omit<Announce
   const [message, setMessage] = useState('');
   const [pinned, setPinned] = useState(false);
   return <div className="editor-overlay" role="dialog" aria-modal="true" aria-label="Nuevo anuncio"><section className="announcement-editor panel"><div className="editor-heading"><div><p className="section-kicker">COMUNICACIÓN</p><h2>Nuevo anuncio</h2><p>El mensaje quedará visible para todo el equipo.</p></div><button className="icon-button" onClick={onClose} aria-label="Cerrar editor"><X size={18} /></button></div><div className="announcement-fields"><label>Título<input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Ej. Reunión de preparación" /></label><label>Mensaje<textarea value={message} onChange={(event) => setMessage(event.target.value)} placeholder="Escribe el anuncio para todos..." rows={5} /></label><label className="pin-check"><input type="checkbox" checked={pinned} onChange={(event) => setPinned(event.target.checked)} /> Fijar este anuncio arriba</label></div><div className="editor-actions"><span /><button className="outline-button" onClick={onClose}>Cancelar</button><button className="primary-button" disabled={!title.trim() || !message.trim()} onClick={() => onSave({ title: title.trim(), message: message.trim(), pinned })}><Save size={16} /> Publicar anuncio</button></div></section></div>;
+}
+
+function LoginDialog({ onSubmit, onClose }: { onSubmit: (email: string) => void; onClose: () => void }) {
+  const [email, setEmail] = useState('wtellezf@gmail.com');
+  return <div className="editor-overlay" role="dialog" aria-modal="true" aria-label="Iniciar sesión"><section className="announcement-editor panel"><div className="editor-heading"><div><p className="section-kicker">ACCESO DE COORDINACIÓN</p><h2>Iniciar sesión</h2><p>Te enviaremos un enlace seguro al correo autorizado.</p></div><button className="icon-button" onClick={onClose} aria-label="Cerrar acceso"><X size={18} /></button></div><div className="announcement-fields"><label>Correo electrónico<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="tu correo@ejemplo.com" /></label><p className="login-note">El tablero y la agenda son públicos. Solo los coordinadores autorizados pueden guardar cambios compartidos.</p></div><div className="editor-actions"><span /><button className="outline-button" onClick={onClose}>Cancelar</button><button className="primary-button" disabled={!email.trim()} onClick={() => onSubmit(email)}><BellRing size={16} /> Enviar enlace</button></div></section></div>;
 }
 
 function TeamEditor({ team, onSave, onDelete, onClose }: { team: Team; onSave: (team: Team) => void; onDelete?: () => void; onClose: () => void }) {
